@@ -1,0 +1,36 @@
+# Visual Studio
+.vs/
+.vscode/
+*.user
+*.suo
+
+# .NET
+**/bin/
+**/obj/
+
+# React / Node
+**/node_modules/
+**/build/
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+
+# ASP.NET development secrets
+appsettings.Development.json
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# SQL Server database files
+*.mdf
+*.ldf
