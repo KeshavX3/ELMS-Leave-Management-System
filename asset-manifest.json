@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "/ELMS-Leave-Management-System/static/css/main.52f21e16.css",
+    "main.js": "/ELMS-Leave-Management-System/static/js/main.96df2680.js",
+    "static/js/453.9a4cfbaa.chunk.js": "/ELMS-Leave-Management-System/static/js/453.9a4cfbaa.chunk.js",
+    "index.html": "/ELMS-Leave-Management-System/index.html",
+    "main.52f21e16.css.map": "/ELMS-Leave-Management-System/static/css/main.52f21e16.css.map",
+    "main.96df2680.js.map": "/ELMS-Leave-Management-System/static/js/main.96df2680.js.map",
+    "453.9a4cfbaa.chunk.js.map": "/ELMS-Leave-Management-System/static/js/453.9a4cfbaa.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.52f21e16.css",
+    "static/js/main.96df2680.js"
+  ]
+}
