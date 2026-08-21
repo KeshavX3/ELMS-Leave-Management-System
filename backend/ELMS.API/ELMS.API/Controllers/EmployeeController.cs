@@ -1,6 +1,7 @@
-﻿using ELMS.API.Data;
+using ELMS.API.Data;
 using ELMS.API.DTOs;
 using ELMS.API.Models;
+using BCrypt.Net;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -186,6 +187,9 @@ namespace ELMS.API.Controllers
             employee.Id = 0;
             employee.CreatedAt = DateTime.UtcNow;
             employee.Status = "Active";
+
+            // Hash the password before persisting — never store plain-text.
+            employee.PasswordHash = BCrypt.Net.BCrypt.HashPassword(employee.PasswordHash);
 
             _context.Employees.Add(employee);
 
@@ -375,6 +379,35 @@ namespace ELMS.API.Controllers
             {
                 message = "Employee deactivated successfully."
             });
+        }
+
+        // ============================================
+        // CHANGE PASSWORD
+        // ============================================
+
+        [HttpPut("{id}/password")]
+        public async Task<IActionResult> ChangePassword(
+            int id,
+            [FromBody] ChangePasswordRequest request)
+        {
+            var employee = await _context.Employees.FindAsync(id);
+
+            if (employee == null)
+            {
+                return NotFound(new { message = "Employee not found." });
+            }
+
+            // Verify the current password first.
+            if (!BCrypt.Net.BCrypt.Verify(request.CurrentPassword, employee.PasswordHash))
+            {
+                return BadRequest(new { message = "Current password is incorrect." });
+            }
+
+            employee.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Password changed successfully." });
         }
     }
 }

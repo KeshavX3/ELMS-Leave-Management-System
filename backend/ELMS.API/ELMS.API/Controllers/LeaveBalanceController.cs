@@ -267,7 +267,7 @@ namespace ELMS.API.Controllers
             });
         }
         [HttpGet("my")]
-        [Authorize(Roles = "Employee")]
+        [Authorize(Roles = "Employee,Manager")]
         public async Task<IActionResult> GetMyBalance()
         {
             var employeeIdClaim = User.FindFirst("EmployeeId") ??

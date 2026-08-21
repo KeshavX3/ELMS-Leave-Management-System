@@ -46,7 +46,8 @@ namespace ELMS.API.Controllers
                             lr.Employee.EmployeeCode,
                             lr.Employee.FirstName,
                             lr.Employee.LastName,
-                            lr.Employee.Email
+                            lr.Employee.Email,
+                            lr.Employee.Role
                         },
 
                     LeaveType = lr.LeaveType == null
@@ -84,12 +85,15 @@ namespace ELMS.API.Controllers
 
         // =========================================================
         // GET SINGLE REQUEST
+        // ADMIN / MANAGER
         // =========================================================
 
         [HttpGet("{id}")]
         [Authorize(Roles = "Admin,Manager")]
         public async Task<IActionResult> GetRequest(int id)
         {
+            // Manager can only see requests of their direct employees.
+            // Admin can see every request, including Manager requests.
             if (User.IsInRole("Manager") &&
                 !await IsDirectReportRequest(id))
             {
@@ -112,7 +116,8 @@ namespace ELMS.API.Controllers
                             lr.Employee.Id,
                             lr.Employee.EmployeeCode,
                             lr.Employee.FirstName,
-                            lr.Employee.LastName
+                            lr.Employee.LastName,
+                            lr.Employee.Role
                         },
 
                     LeaveType = lr.LeaveType == null
@@ -190,6 +195,16 @@ namespace ELMS.API.Controllers
         // =========================================================
         // GET PENDING REQUESTS
         // ADMIN / MANAGER
+        //
+        // ADMIN:
+        //   Sees ALL pending requests.
+        //
+        // MANAGER:
+        //   Sees ONLY pending requests from direct employees.
+        //
+        // This automatically means:
+        // Employee  -> Manager
+        // Manager   -> Admin
         // =========================================================
 
         [HttpGet("pending")]
@@ -200,6 +215,15 @@ namespace ELMS.API.Controllers
                 .Include(lr => lr.Employee)
                 .Include(lr => lr.LeaveType)
                 .Where(lr => lr.Status == "Pending");
+
+            // Manager can only see requests from their own team.
+            //
+            // Manager's own leave request will NOT appear here
+            // because ManagerId of the manager is normally null
+            // and therefore it is not a direct-report request.
+            //
+            // Admin does not enter this block and therefore sees
+            // ALL pending requests, including Manager leave requests.
 
             if (User.IsInRole("Manager"))
             {
@@ -231,7 +255,8 @@ namespace ELMS.API.Controllers
                             lr.Employee.EmployeeCode,
                             lr.Employee.FirstName,
                             lr.Employee.LastName,
-                            lr.Employee.Email
+                            lr.Employee.Email,
+                            lr.Employee.Role
                         },
 
                     LeaveType = lr.LeaveType == null
@@ -257,31 +282,41 @@ namespace ELMS.API.Controllers
 
         // =========================================================
         // CREATE LEAVE REQUEST
-        // EMPLOYEE / ADMIN
+        // EMPLOYEE / MANAGER
+        //
+        // Employee:
+        //   Leave request goes to their Manager.
+        //
+        // Manager:
+        //   Leave request goes to Admin.
+        //
+        // Both use the same LeaveBalance system.
         // =========================================================
 
         [HttpPost]
-        [Authorize(Roles = "Employee,Admin")]
+        [Authorize(Roles = "Employee,Manager")]
         public async Task<IActionResult> CreateRequest(
             CreateLeaveRequest request)
         {
-            // Employee can only create a request for themselves
-            if (User.IsInRole("Employee"))
+            // Employee and Manager can ONLY create a leave request
+            // for themselves.
+            var employeeId = GetEmployeeId();
+
+            if (employeeId == null)
             {
-                var employeeId = GetEmployeeId();
-
-                if (employeeId == null)
+                return Unauthorized(new
                 {
-                    return Unauthorized(new
-                    {
-                        message = "Employee identity not found."
-                    });
-                }
-
-                request.EmployeeId = employeeId.Value;
+                    message = "Employee identity not found."
+                });
             }
 
-            // Validate dates
+            // Never trust EmployeeId sent from frontend.
+            request.EmployeeId = employeeId.Value;
+
+            // =====================================================
+            // VALIDATE DATES
+            // =====================================================
+
             if (request.FromDate.Date >
                 request.ToDate.Date)
             {
@@ -292,7 +327,10 @@ namespace ELMS.API.Controllers
                 });
             }
 
-            // Validate reason
+            // =====================================================
+            // VALIDATE REASON
+            // =====================================================
+
             if (string.IsNullOrWhiteSpace(
                 request.Reason))
             {
@@ -303,7 +341,10 @@ namespace ELMS.API.Controllers
                 });
             }
 
-            // Find employee
+            // =====================================================
+            // FIND EMPLOYEE
+            // =====================================================
+
             var employee =
                 await _context.Employees
                     .FirstOrDefaultAsync(e =>
@@ -319,7 +360,10 @@ namespace ELMS.API.Controllers
                 });
             }
 
-            // Find leave type
+            // =====================================================
+            // FIND LEAVE TYPE
+            // =====================================================
+
             var leaveType =
                 await _context.LeaveTypes
                     .FirstOrDefaultAsync(lt =>
@@ -459,32 +503,87 @@ namespace ELMS.API.Controllers
                         DateTime.UtcNow
                 };
 
-            _context.LeaveRequests.Add(leaveRequest);
+            _context.LeaveRequests.Add(
+                leaveRequest);
 
             await _context.SaveChangesAsync();
 
-            // Notify the employee's manager
-            if (employee.ManagerId.HasValue)
+            // =====================================================
+            // NOTIFICATION ROUTING
+            //
+            // EMPLOYEE:
+            //   Notify their Manager.
+            //
+            // MANAGER:
+            //   Notify Admin.
+            // =====================================================
+
+            if (employee.Role == "Manager")
             {
-                var notification = new Notification
+                // Manager leave goes to Admin.
+                var admins = await _context.Employees
+                    .Where(e =>
+                        e.Role == "Admin" &&
+                        e.Status != "Inactive")
+                    .ToListAsync();
+
+                foreach (var admin in admins)
                 {
-                    EmployeeId = employee.ManagerId.Value,
+                    var notification = new Notification
+                    {
+                        EmployeeId = admin.Id,
 
-                    Message =
-                        $"{employee.FirstName} {employee.LastName} submitted a new leave request.",
+                        Message =
+                            $"{employee.FirstName} {employee.LastName} submitted a new leave request.",
 
-                    Type = "LeaveRequest",
+                        Type = "LeaveRequest",
 
-                    LeaveRequestId = leaveRequest.Id,
+                        LeaveRequestId =
+                            leaveRequest.Id,
 
-                    IsRead = false,
+                        IsRead = false,
 
-                    CreatedAt = DateTime.UtcNow
-                };
+                        CreatedAt =
+                            DateTime.UtcNow
+                    };
 
-                _context.Notifications.Add(notification);
+                    _context.Notifications.Add(notification);
+                }
 
                 await _context.SaveChangesAsync();
+            }
+            else
+            {
+                // Normal Employee leave goes to their Manager.
+                if (employee.ManagerId.HasValue)
+                {
+                    var notification =
+                        new Notification
+                        {
+                            EmployeeId =
+                                employee.ManagerId.Value,
+
+                            Message =
+                                $"{employee.FirstName} {employee.LastName} submitted a new leave request.",
+
+                            Type =
+                                "LeaveRequest",
+
+                            LeaveRequestId =
+                                leaveRequest.Id,
+
+                            IsRead =
+                                false,
+
+                            CreatedAt =
+                                DateTime.UtcNow
+                        };
+
+                    _context.Notifications.Add(
+                        notification);
+
+                    await _context.SaveChangesAsync();
+                }
             }
 
             return Ok(new
@@ -505,6 +604,12 @@ namespace ELMS.API.Controllers
         // =========================================================
         // APPROVE LEAVE REQUEST
         // ADMIN / MANAGER
+        //
+        // Employee leave:
+        //   Manager can approve.
+        //
+        // Manager leave:
+        //   Only Admin can approve.
         // =========================================================
 
         [HttpPut("{id}/approve")]
@@ -519,6 +624,7 @@ namespace ELMS.API.Controllers
             {
                 var request =
                     await _context.LeaveRequests
+                        .Include(lr => lr.Employee)
                         .FirstOrDefaultAsync(lr =>
                             lr.Id == id);
 
@@ -540,12 +646,29 @@ namespace ELMS.API.Controllers
                     });
                 }
 
-                // Manager can only approve direct reports
+                // =====================================================
+                // MANAGER SECURITY
+                //
+                // Manager can ONLY approve their direct employees.
+                //
+                // If the request belongs to another Manager,
+                // IsDirectReportRequest() returns false.
+                //
+                // Therefore:
+                //
+                // Manager request → cannot be approved by Manager.
+                // Admin request   → handled by Admin only.
+                // =====================================================
+
                 if (User.IsInRole("Manager") &&
                     !await IsDirectReportRequest(request.Id))
                 {
                     return Forbid();
                 }
+
+                // =====================================================
+                // GET LEAVE BALANCE
+                // =====================================================
 
                 var balance =
                     await _context.LeaveBalances
@@ -568,6 +691,10 @@ namespace ELMS.API.Controllers
                     });
                 }
 
+                // =====================================================
+                // CHECK BALANCE AGAIN
+                // =====================================================
+
                 if (balance.RemainingDays <
                     request.TotalDays)
                 {
@@ -578,7 +705,10 @@ namespace ELMS.API.Controllers
                     });
                 }
 
-                // Update balance
+                // =====================================================
+                // UPDATE BALANCE
+                // =====================================================
+
                 balance.UsedDays +=
                     request.TotalDays;
 
@@ -586,33 +716,47 @@ namespace ELMS.API.Controllers
                     balance.AllocatedDays -
                     balance.UsedDays;
 
-                // Update request
+                // =====================================================
+                // UPDATE REQUEST
+                // =====================================================
+
                 request.Status =
                     "Approved";
 
                 request.ApprovedAt =
                     DateTime.UtcNow;
-                var approvalNotification = new Notification
-                {
-                    EmployeeId = request.EmployeeId,
-
-                    Message =
-        "Your leave request has been approved.",
-
-                    Type = "LeaveApproved",
-
-                    LeaveRequestId = request.Id,
-
-                    IsRead = false,
-
-                    CreatedAt = DateTime.UtcNow
-                };
-
-                _context.Notifications.Add(
-                    approvalNotification);
 
                 request.ApprovedById =
                     GetEmployeeId();
+
+                // =====================================================
+                // NOTIFY EMPLOYEE / MANAGER
+                // =====================================================
+
+                var approvalNotification =
+                    new Notification
+                    {
+                        EmployeeId =
+                            request.EmployeeId,
+
+                        Message =
+                            "Your leave request has been approved.",
+
+                        Type =
+                            "LeaveApproved",
+
+                        LeaveRequestId =
+                            request.Id,
+
+                        IsRead =
+                            false,
+
+                        CreatedAt =
+                            DateTime.UtcNow
+                    };
+
+                _context.Notifications.Add(
+                    approvalNotification);
 
                 await _context.SaveChangesAsync();
 
@@ -651,6 +795,9 @@ namespace ELMS.API.Controllers
         // =========================================================
         // REJECT LEAVE REQUEST
         // ADMIN / MANAGER
+        //
+        // Manager can reject direct employee requests.
+        // Admin can reject Manager requests.
         // =========================================================
 
         [HttpPut("{id}/reject")]
@@ -661,6 +808,7 @@ namespace ELMS.API.Controllers
         {
             var leaveRequest =
                 await _context.LeaveRequests
+                    .Include(lr => lr.Employee)
                     .FirstOrDefaultAsync(lr =>
                         lr.Id == id);
 
@@ -682,7 +830,11 @@ namespace ELMS.API.Controllers
                 });
             }
 
-            // Manager can only reject direct reports
+            // Manager can only reject requests from
+            // their direct employees.
+            //
+            // A Manager cannot reject another Manager's
+            // leave request.
             if (User.IsInRole("Manager") &&
                 !await IsDirectReportRequest(leaveRequest.Id))
             {
@@ -710,21 +862,32 @@ namespace ELMS.API.Controllers
 
             leaveRequest.ApprovedById =
                 GetEmployeeId();
-            var rejectionNotification = new Notification
-            {
-                EmployeeId = leaveRequest.EmployeeId,
 
-                Message =
-        $"Your leave request has been rejected. Reason: {leaveRequest.RejectionReason}",
+            // =====================================================
+            // NOTIFY EMPLOYEE / MANAGER
+            // =====================================================
 
-                Type = "LeaveRejected",
+            var rejectionNotification =
+                new Notification
+                {
+                    EmployeeId =
+                        leaveRequest.EmployeeId,
 
-                LeaveRequestId = leaveRequest.Id,
+                    Message =
+                        $"Your leave request has been rejected. Reason: {leaveRequest.RejectionReason}",
 
-                IsRead = false,
+                    Type =
+                        "LeaveRejected",
 
-                CreatedAt = DateTime.UtcNow
-            };
+                    LeaveRequestId =
+                        leaveRequest.Id,
+
+                    IsRead =
+                        false,
+
+                    CreatedAt =
+                        DateTime.UtcNow
+                };
 
             _context.Notifications.Add(
                 rejectionNotification);
@@ -746,11 +909,11 @@ namespace ELMS.API.Controllers
 
         // =========================================================
         // CANCEL PENDING REQUEST
-        // EMPLOYEE / ADMIN
+        // EMPLOYEE / MANAGER
         // =========================================================
 
         [HttpDelete("{id}")]
-        [Authorize(Roles = "Employee,Admin")]
+        [Authorize(Roles = "Employee,Manager")]
         public async Task<IActionResult> CancelRequest(
             int id)
         {
@@ -770,10 +933,9 @@ namespace ELMS.API.Controllers
             var currentEmployeeId =
                 GetEmployeeId();
 
-            if (User.IsInRole("Employee") &&
-                (currentEmployeeId == null ||
-                 request.EmployeeId !=
-                    currentEmployeeId.Value))
+            if (currentEmployeeId == null ||
+                request.EmployeeId !=
+                    currentEmployeeId.Value)
             {
                 return Forbid();
             }
@@ -801,11 +963,11 @@ namespace ELMS.API.Controllers
 
         // =========================================================
         // GET MY REQUESTS
-        // EMPLOYEE
+        // EMPLOYEE / MANAGER
         // =========================================================
 
         [HttpGet("my")]
-        [Authorize(Roles = "Employee")]
+        [Authorize(Roles = "Employee,Manager")]
         public async Task<IActionResult> GetMyRequests()
         {
             var employeeId =

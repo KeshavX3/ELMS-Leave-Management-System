@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ELMS.API.Data;
 using ELMS.API.Models;
@@ -6,6 +6,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using BCrypt.Net;
 
 namespace ELMS.API.Controllers
 {
@@ -27,10 +28,12 @@ namespace ELMS.API.Controllers
         {
             var employee = await _context.Employees
                 .FirstOrDefaultAsync(e =>
-                    e.Email == request.Email &&
-                    e.PasswordHash == request.Password);
+                    e.Email == request.Email);
 
-            if (employee == null)
+            // Verify the submitted password against the stored BCrypt hash.
+            // BCrypt.Verify returns false for null/empty hashes — safe by default.
+            if (employee == null ||
+                !BCrypt.Net.BCrypt.Verify(request.Password, employee.PasswordHash))
             {
                 return Unauthorized(new
                 {

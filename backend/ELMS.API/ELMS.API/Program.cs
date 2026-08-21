@@ -1,5 +1,6 @@
 using ELMS.API.Data;
 using ELMS.API.Models;
+using BCrypt.Net;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -78,13 +79,19 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-// CORS
+// CORS – only allow the origins listed in appsettings.json "AllowedOrigins".
+// In production, set this to your deployed frontend URL(s).
+var allowedOrigins = builder.Configuration
+    .GetSection("AllowedOrigins")
+    .Get<string[]>() ?? ["http://localhost:3000"];
+
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll",
-        policy => policy.AllowAnyOrigin()
-                        .AllowAnyMethod()
-                        .AllowAnyHeader());
+    options.AddPolicy("FrontendPolicy",
+        policy => policy
+            .WithOrigins(allowedOrigins)
+            .AllowAnyMethod()
+            .AllowAnyHeader());
 });
 
 var app = builder.Build();
@@ -94,7 +101,7 @@ app.UseSwaggerUI();
 
 app.UseHttpsRedirection();
 
-app.UseCors("AllowAll");
+app.UseCors("FrontendPolicy");
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -105,21 +112,50 @@ app.MapControllers();
 using(var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
     // =========================
     // SEED ADMIN USER
     // =========================
 
-    if (!db.Employees.Any())
+    var admin = db.Employees
+        .FirstOrDefault(e => e.Email == "admin@test.com");
+
+    if (admin == null)
     {
         db.Employees.Add(new Employee
         {
             FirstName = "Admin",
             LastName = "User",
             Email = "admin@test.com",
-            PasswordHash = "123456",
+            PasswordHash =
+                BCrypt.Net.BCrypt.HashPassword("123456"),
             Role = "Admin"
         });
+
+        db.SaveChanges();
+    }
+    else if (!admin.PasswordHash.StartsWith("$2"))
+    {
+        admin.PasswordHash =
+            BCrypt.Net.BCrypt.HashPassword("123456");
+
+        db.SaveChanges();
+    }
+    // =========================================================
+    // FIX OLD PLAIN-TEXT PASSWORDS
+    // Development / migration helper
+    // =========================================================
+
+    var usersWithPlainTextPasswords = db.Employees
+        .Where(e => !e.PasswordHash.StartsWith("$2"))
+        .ToList();
+
+    if (usersWithPlainTextPasswords.Any())
+    {
+        foreach (var user in usersWithPlainTextPasswords)
+        {
+            user.PasswordHash =
+                BCrypt.Net.BCrypt.HashPassword(user.PasswordHash);
+        }
 
         db.SaveChanges();
     }
@@ -244,7 +280,7 @@ using(var scope = app.Services.CreateScope())
             }
         );
 
-        db.SaveChanges();
+        db.SaveChanges();   
     }
 }
 
