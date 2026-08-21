@@ -1,16 +1,15 @@
 databases:
   - name: elms-db
-    databaseName: ELMS_DB
+    databaseName: elms_db
     user: elms_user
     plan: free
 
 services:
   - type: web
     name: elms-api
-    runtime: dotnet
+    runtime: docker
     plan: free
-    buildCommand: "dotnet publish backend/ELMS.API/ELMS.API/ELMS.API.csproj -c Release -o out"
-    startCommand: "dotnet out/ELMS.API.dll"
+    dockerfilePath: ./Dockerfile
     envVars:
       - key: ASPNETCORE_ENVIRONMENT
         value: Production
