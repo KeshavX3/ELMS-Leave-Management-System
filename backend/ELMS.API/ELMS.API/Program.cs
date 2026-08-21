@@ -19,10 +19,17 @@ var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 
 if (!string.IsNullOrEmpty(databaseUrl))
 {
-    // Render provides a postgres:// URI — convert it to Npgsql format.
+    // Render provides a postgres:// URI — convert it to Npgsql connection string.
+    // uri.Port returns -1 when the port is not explicitly in the URL, so default to 5432.
     var uri = new Uri(databaseUrl);
-    var userInfo = uri.UserInfo.Split(':');
-    var npgsqlConn = $"Host={uri.Host};Port={uri.Port};Database={uri.AbsolutePath.TrimStart('/')};Username={userInfo[0]};Password={userInfo[1]};SSL Mode=Require;Trust Server Certificate=True";
+    var userInfo = uri.UserInfo.Split(':', 2);
+    var host     = uri.Host;
+    var port     = uri.Port > 0 ? uri.Port : 5432;
+    var database = uri.AbsolutePath.TrimStart('/');
+    var username = Uri.UnescapeDataString(userInfo[0]);
+    var password = Uri.UnescapeDataString(userInfo[1]);
+
+    var npgsqlConn = $"Host={host};Port={port};Database={database};Username={username};Password={password};SSL Mode=Require;Trust Server Certificate=True";
     builder.Services.AddDbContext<AppDbContext>(options =>
         options.UseNpgsql(npgsqlConn));
 }
