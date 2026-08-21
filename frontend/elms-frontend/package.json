@@ -1,4 +1,5 @@
 {
+  "_comment": "Updated 2026-08-21 — triggers CI rebuild with correct API URL",
   "name": "elms-frontend",
   "version": "0.1.0",
   "private": true,
