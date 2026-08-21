@@ -31,7 +31,6 @@ jobs:
       - name: Build React app
         working-directory: frontend/elms-frontend
         env:
-          REACT_APP_API_URL: ${{ secrets.REACT_APP_API_URL }}
           CI: false
         run: npm run build
 
