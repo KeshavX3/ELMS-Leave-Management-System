@@ -7,6 +7,11 @@ using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
 using System.Text;
 
+// ── Fix: Npgsql 6+ maps DateTime to 'timestamp with time zone' and rejects
+// Kind=Unspecified. This switch restores the legacy behaviour (accept any Kind)
+// so existing DateTime values in seed data and models work without changes.
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services
