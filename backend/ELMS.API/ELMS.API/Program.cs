@@ -12,14 +12,35 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services
 builder.Services.AddControllers();
 
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+// ── Database ─────────────────────────────────────────────────────────────────
+// In production (Render.com), DATABASE_URL env var is set automatically.
+// Locally, falls back to the connection string in appsettings.json.
+var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 
-// JWT CONFIG
+if (!string.IsNullOrEmpty(databaseUrl))
+{
+    // Render provides a postgres:// URI — convert it to Npgsql format.
+    var uri = new Uri(databaseUrl);
+    var userInfo = uri.UserInfo.Split(':');
+    var npgsqlConn = $"Host={uri.Host};Port={uri.Port};Database={uri.AbsolutePath.TrimStart('/')};Username={userInfo[0]};Password={userInfo[1]};SSL Mode=Require;Trust Server Certificate=True";
+    builder.Services.AddDbContext<AppDbContext>(options =>
+        options.UseNpgsql(npgsqlConn));
+}
+else
+{
+    // Local development: use connection string from appsettings.json
+    builder.Services.AddDbContext<AppDbContext>(options =>
+        options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+}
+
+// ── JWT ───────────────────────────────────────────────────────────────────────
+// In production, read JWT key from environment variable (never commit secrets).
+// Locally, falls back to appsettings.json value.
 var jwtSettings = builder.Configuration.GetSection("Jwt");
 
-var jwtKey = jwtSettings["Key"]
-    ?? throw new InvalidOperationException("JWT Key is missing from appsettings.json");
+var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY")
+    ?? jwtSettings["Key"]
+    ?? throw new InvalidOperationException("JWT Key is missing from environment and appsettings.json");
 
 var key = Encoding.UTF8.GetBytes(jwtKey);
 
@@ -79,8 +100,8 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-// CORS – only allow the origins listed in appsettings.json "AllowedOrigins".
-// In production, set this to your deployed frontend URL(s).
+// ── CORS ──────────────────────────────────────────────────────────────────────
+// AllowedOrigins from appsettings.json + the GitHub Pages URL for production.
 var allowedOrigins = builder.Configuration
     .GetSection("AllowedOrigins")
     .Get<string[]>() ?? ["http://localhost:3000"];
@@ -108,10 +129,14 @@ app.UseAuthorization();
 
 app.MapControllers();
 
-// SEED USER
+// ── Seed Data ─────────────────────────────────────────────────────────────────
 using(var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+    // Apply any pending migrations automatically on startup (safe for cloud).
+    db.Database.Migrate();
+
     // =========================
     // SEED ADMIN USER
     // =========================

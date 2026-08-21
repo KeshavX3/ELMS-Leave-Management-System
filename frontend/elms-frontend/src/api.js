@@ -3,13 +3,16 @@ import axios from "axios";
 /**
  * Shared Axios instance for all API calls.
  *
+ * - baseURL reads from REACT_APP_API_URL env variable so we can switch
+ *   between local dev (localhost) and production (Render.com) without
+ *   changing any code.
  * - Automatically attaches the JWT Bearer token from localStorage.
  * - On 401 (token expired / invalid), clears auth state and
  *   redirects to the login page so the user is never stuck in a
  *   broken authenticated state.
  */
 const api = axios.create({
-  baseURL: "https://localhost:7014/api",
+  baseURL: process.env.REACT_APP_API_URL || "https://localhost:7014/api",
 });
 
 // ── Request interceptor: attach JWT token ──────────────────────────────────
@@ -34,7 +37,7 @@ api.interceptors.response.use(
       localStorage.removeItem("user");
 
       // Redirect to login (only if not already there).
-      if (window.location.pathname !== "/") {
+      if (window.location.pathname !== "/" && window.location.hash !== "#/") {
         window.location.href = "/";
       }
     }
@@ -42,4 +45,4 @@ api.interceptors.response.use(
   }
 );
 
-export default api;
+export default api;

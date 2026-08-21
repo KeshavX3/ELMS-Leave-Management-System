@@ -1,5 +1,5 @@
 import {
-  BrowserRouter,
+  HashRouter,
   Routes,
   Route,
   Navigate
@@ -167,9 +167,9 @@ function App() {
     <ErrorBoundary>
       {/* AuthProvider makes user/token/login/logout available everywhere. */}
       <AuthProvider>
-        <BrowserRouter>
+        <HashRouter>
           <AppRoutes />
-        </BrowserRouter>
+        </HashRouter>
       </AuthProvider>
     </ErrorBoundary>
   );
