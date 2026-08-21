@@ -54,6 +54,9 @@ var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY")
     ?? jwtSettings["Key"]
     ?? throw new InvalidOperationException("JWT Key is missing from environment and appsettings.json");
 
+// Sync to configuration so controllers reading from IConfiguration get the same key
+builder.Configuration["Jwt:Key"] = jwtKey;
+
 var key = Encoding.UTF8.GetBytes(jwtKey);
 
 builder.Services.AddAuthentication(options =>

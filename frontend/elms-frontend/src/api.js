@@ -37,8 +37,8 @@ api.interceptors.response.use(
       localStorage.removeItem("user");
 
       // Redirect to login (only if not already there).
-      if (window.location.pathname !== "/" && window.location.hash !== "#/") {
-        window.location.href = "/";
+      if (window.location.hash !== "#/" && window.location.hash !== "") {
+        window.location.hash = "#/";
       }
     }
     return Promise.reject(error);

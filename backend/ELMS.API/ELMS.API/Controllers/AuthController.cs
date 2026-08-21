@@ -52,8 +52,12 @@ namespace ELMS.API.Controllers
             var jwtSettings =
                 _configuration.GetSection("Jwt");
 
+            var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY")
+                ?? jwtSettings["Key"]
+                ?? throw new InvalidOperationException("JWT Key is missing from environment and appsettings.json");
+
             var key = Encoding.UTF8.GetBytes(
-                jwtSettings["Key"]!
+                jwtKey
             );
 
             var claims = new List<Claim>
